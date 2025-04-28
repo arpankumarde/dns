@@ -36,15 +36,22 @@ server.on("message", (msg, rinfo) => {
     });
     server.send(ans, rinfo.port, rinfo.address);
   } else {
-    // Domain not found in our database - send empty response
-    const ans = dnsPacket.encode({
-      type: "response",
-      id: incomingReq.id,
-      flags: dnsPacket.AUTHORITATIVE_ANSWER,
-      questions: incomingReq.questions,
-      answers: [],
+    // If domain not in our database, forward the request to third party dna
+    const forwardClient = dgram.createSocket("udp4");
+
+    forwardClient.on("message", (response) => {
+      // Forward the response back to the original client
+      server.send(response, rinfo.port, rinfo.address);
+      forwardClient.close();
     });
-    server.send(ans, rinfo.port, rinfo.address);
+
+    forwardClient.on("error", (err) => {
+      console.error("DNS forwarding error:", err);
+      forwardClient.close();
+    });
+
+    // Send the original request to External DNS
+    forwardClient.send(msg, 53, "9.9.9.9");
   }
 });
 
